@@ -1,0 +1,694 @@
+---
+title: "Final assignment - STIN300"
+author: "Rubakan Thurupan"
+date: "25.01.2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Introduksjon
+
+Nanopore-sekvensering er både billig og mobilt, dvs at man sekvensere «on-site». I forbindelse med å gjenkjenne kropps-væsker i rettsgenetikk så vil jeg sekvensere 16S genet hos alle organismer i et biologisk spor. Da må først dette genet amplifiseres, og til dette trenger man et primer-par. Ethvert primer-par skal da matche to steder på genet, og det som amplifiseres er det som ligger fra og med den ene til og med den andre primeren. Men, ikke alle sekvenser matcher slike primere. Oppgaven består i å finne hvilke  av de 1000 sekvenser hos SILVA databasen som matcher et gitt sett primere for nanopore-sekvensering. Deretter vil jeg  se på i hvilke grener av taksonomien som primerne matcher. Hvis det er en total andel av sekvensene som har en match, så er jeg interessert i hvilke phyla andelen matcher er større/mindre enn forventet. 
+
+
+_______________________________________________________________________________________________________
+Her er primerne slik de står i labheftet vårt nanopore sekvensering.  
+
+ 
+
+[1] Modified Mangala-F1 primer: 5’ TTTCTGTTGGTGCTGATATTGC TCCTACGGGAGGCAGCAG 3’
+
+ 
+
+[1] Modified 16S UR primer: 5’ ACTTGCCTGTCGCTCTATCTTC- CGGTTACCTTGTTACGACTT 3’
+
+--------------------------------------------------------------------------------------------------------
+ 
+
+Vedlagt er et utvalg av 16S sekvenser fra SILVA-databasen, i form av en fasta-fil. 
+
+Jeg har en match mot en sekvens dersom den ene primeren matcher ett sted, og den andre primeren matcher et annet sted. Merk at begge primere er angitt i 5’-3’ retning, det betyr vel at den ene må revers-komplementeres før man matcher. 
+
+ 
+Jeg er interessert i antall sekvenser som matcher, samt deres taksonomi. Det er angitt i Header-linjen til hver sekvens, adskilt med semikolon for hvert nivå. Dette følger stort sett mønsteret:
+
+Superkingdom;phylum;class;order;family;genus;species
+
+Deretter jeg ønsker å ha listet genus hos alle sekvenser med primer-match.
+
+ 
+Den vedlagte fasta-fila er bare et utplukk på 1000 sekvenser fra den store SILVA samlingen. 
+Filen er fra SILVA_138_SSURef_tax_silva.fasta.gz fra https://www.arb-silva.de/no_cache/download/archive/release_138/Exports/
+Archive - ARB & SILVA
+
+
+```{r}
+library(stringr)
+library(tidyverse)
+library(dplyr)
+```
+
+
+
+```{r Leser inn .fasta}
+
+lines <- readLines("SILVA_138_SSURef_tax_silva_sub1000.fasta")
+
+header.idx <- which(str_detect(lines, ">")) #detektere linjer som inne holder ">"
+
+
+
+fasta.table <- tibble(Header = str_remove(lines[header.idx], "^>"),
+                      Sequence = rep("", length(header.idx)))
+
+print(fasta.table)
+
+header.idx <- c(header.idx, length(lines)+1)
+for(i in 1:(length(header.idx)-1)){
+  chunk <- lines[(header.idx[i]+1):(header.idx[i+1]-1)]
+  fasta.table$Sequence[i] <- str_c(chunk, collapse = "")  
+}
+
+```
+
+
+
+________________________________________________________________________________________________________
+
+
+
+```{r}
+library(stringr)
+library(tidyverse)
+library(tidyr)
+```
+
+```{r konverterer RNA til DNA}
+#Trekker ut Genus og sekvener
+genus <- fasta.table$Header
+
+genus.table <- c(genus)
+b <- list(strsplit(genus.table, ";"))
+
+df <- data.frame(genus = (fasta.table$Header)) 
+
+
+
+library(splitstackshape)
+
+genusfinal.table <- cSplit(data.frame(genus), 'genus', ";")
+
+genusfinal.table[,`:=`(genus_1 = NULL, genus_2= NULL, genus_3= NULL, 
+                       genus_4= NULL, genus_5= NULL, genus_7= NULL)] #genusfinal.table Printer oppdaterte genusfinal.table
+
+
+
+RNA <- c(fasta.table$Sequence)
+riktig <- gsub("U", "T", RNA)
+                              
+
+#Konverterer til DNA.
+sekvenser.table <- riktig
+
+```
+
+
+________________________________________________________________________________________________________
+
+```{r Oppdaterte tabellen}
+
+
+final.table.ext <- cbind(genusfinal.table, sekvenser.table)   #legger sammen sekvenser og genus tabellen sammen       
+
+```
+
+
+________________________________________________________________________________________________________
+```{r}
+final.table.ext%>% slice(200:500) %>% 
+  separate(sekvenser.table, into = c("Sekvens", NA), sep = 10)
+```
+
+Når kjører funksjonen final.table.ext får jeg oversikt over 1000  observasjoner  men har valgt å forkorte det med "slice" funksjonen og det viser en liten del av res_1. Det inneholder egentliger flere rader og DNA sekvensen er mye lengre. Denne tabellen består av listet genus hos alle sekvenser.
+Jeg kommer til å bruke denne tabellen videre til å matche med primerne.
+
+
+
+
+
+
+
+
+________________________________________________________________________________________________________
+
+
+Legger til primeren slik som det står i labheftet vårt nanopore sekvensering.Deretter setter final.table.ext og primer sammen.
+
+
+
+
+
+
+```{r}
+library(stringr)
+```
+
+
+Prøver å mathche primer sekvensen med den oppdaterte tabellen
+ 
+```{r}
+
+#Modified_Mangala_F1_primer = c("TTTCTGTTGGTGCTGATATTGC TCCTACGGGAGGCAGCAG "), 
+#Modified_16S_UR_primer  = c("ACTTGCCTGTCGCTCTATCTTC- CGGTTACCTTGTTACGACTT "), 
+    
+
+#5´-3
+res_1 = final.table.ext %>%
+  filter(str_detect(final.table.ext$sekvenser.table, "TCCTACGGGAGGCAGCAG"))
+
+
+```
+
+
+
+
+
+
+
+________________________________________________________________________________________________________
+
+```{r}
+res_1 %>% slice(800:901) %>% 
+  separate(sekvenser.table, into = c("Sekvens", NA), sep = 10) 
+```
+
+
+Når kjører funksjonen res_1 får jeg 901 matcher,  men har valgt å forkorte det med "slice" funksjonen og det viser en liten del av res_1 og det inneholder egentlig flere rader og DNA sekvensen er mye lengre.
+
+
+
+
+
+
+
+
+
+
+```{r}
+#primer_2 3´-5´ og KOMPLEMENTÆR!!!!
+res_2 = final.table.ext %>%
+  filter(str_detect(final.table.ext$sekvenser.table, "AAGTCGTAACAAGGTAACCG"))
+
+```
+
+
+
+
+________________________________________________________________________________________________________
+
+
+```{r}
+res_2 %>% slice(20:40) %>% 
+  separate(sekvenser.table, into = c("Sekvens", NA), sep = 10) 
+```
+
+
+
+Når kjører funksjonen res_2 får jeg 40 matcher,  men har valgt å forkorte det med "slice" funksjonen og det viser en liten del av res_2 og det inneholder egentliger flere rader og DNA sekvensen er mye lengre.
+
+
+
+
+
+
+________________________________________________________________________________________________________
+
+
+```{r}
+#begge to
+res_3 = final.table.ext %>%
+  filter(str_detect(final.table.ext$sekvenser.table, "TCCTACGGGAGGCAGCAG")&(str_detect(final.table.ext$sekvenser.table, "AAGTCGTAACAAGGTAACCG")))
+
+```
+
+
+
+
+
+
+________________________________________________________________________________________________________
+
+```{r res_3- 39 matcher}
+res_3 %>% slice(1:10) %>% 
+  separate(sekvenser.table, into = c("Sekvens", NA), sep = 25:39) 
+
+```
+
+
+
+________________________________________________________________________________________________________
+Når kjører funksjonen res_3 får jeg 39 matcher,  men har valgt å forkorte det med "slice" funksjonen og det viser en liten del av res_3 og det inneholder egentliger flere rader og DNA sekvensen er mye lengre.
+
+
+_______________________________________________________________________________________________________
+
+Den første primer må være i den retningen oppgitt i protokollen, men den andre må være i 3'- 5' og komplementær.
+
+Når jeg bruker bare første får jeg 901 match, deretter bruker jeg primer nr2 og da får jeg 40. 
+Disse to primere skal festes til og amplifisere et området da trenger man å bruke filter som har begge sekvenser.
+Dette fører til at jeg får 39 hits. Dvs at disse primere kan brukes på 39 av 1000 genomer.
+
+______________________________________________________________________________________________________
+
+
+
+
+
+
+
+
+
+# Variasjon i GC innhold
+
+
+
+
+________________________________________________________________________________________________________
+
+```{r GC - statistikk }
+library(seqinr)
+DNA <- read.fasta(file = "SILVA_138_SSURef_tax_silva_sub1000.fasta")
+DNAsek <- DNA[[1]]
+
+GC(DNAsek)
+```
+
+
+
+I molekylærbiologi  er GC innhold prosentandelen av nitrogenholdige baser i et DNA- eller RNA molekyl som er enten guanin eller cytosin. GC innheoldet i 1000 første i Silva dna sekvensen er omtrent 65,5 %, er det sannsynligvis lokal variasjon i GC innhold i genomet. Det er noen regioner i genomsekvensen kan ha GC innhold ganske mye høyere enn 65,5%, mens noen regioner i genomssekvensen kan ha GC innhold som er ganske mye lavere enn 
+65,5% .
+
+
+
+```{r}
+starts <- seq(1, length(DNAsek)-10, by = 1000)
+n <- length(starts)    #  Skal finne lengde av en vektor "start"
+chunkGCs <- numeric(n) 
+for (i in 1:n) {
+  chunk <- DNAsek[starts[i]:(starts[i]+999)]
+  chunkGC <- GC(chunk)
+  print(chunkGC)
+  chunkGCs[i] <- chunkGC
+  
+}
+
+```
+
+
+## Graf av GC innhold
+
+```{r Graf av GC innhold}
+
+starts <- seq(1, length(DNAsek)-10, by = 1000)
+n <- length(starts)    #  Skal finne lengde av en vektor "start"
+KlumpGCs <- numeric(n) 
+ for (i in 1:n) {
+  chunk <- DNAsek[starts[i]:(starts[i]+999)]
+  KlumpGC <- GC(chunk)
+  print(chunkGC)
+  KlumpGC[i] <- KlumpGC
+  
+ }
+
+plot(starts,chunkGCs,type="b",xlab="Nukleotid start posisjon",ylab="GC innhold")
+
+
+```
+
+
+
+
+Lokale svigninger i GC innhold i genomssekvensen kan gi forskjelllige interessant informasjon.
+Man kan for eksempel avsløre tilfeller av horisontal overføring eller forstyrrelser i mutasjoner.
+
+
+
+```{r Oversikt over GC innhold}
+GCpros <- double()
+n <- length(DNA[[1]])
+for (i in 1:(n - 999)) GCpros[i] <- GC(DNA[[1]][i:(i+999)])
+plot(GCpros,type="l") 
+```
+
+
+Her ser man en graf av 300 observasjoner. Hvis en del av DNA har beveget seg ved horisontal overføring fra genomet til lav GC innhold til med høyt GC innhold, kan chunk  av horisontalt overført oppdages som en region med uvanlig lavt GC innhold i høy GC mottakerens genom.
+
+Generelt er det slik at lav GC innhold i et ellers høy GC innholdsgenom  kan også oppstå av forstyrrelser i mutasjon i den regionen av genomet.
+________________________________________________________________________________________________________
+
+
+
+
+Nå ønsker jeg å finne  hvilke phyla andelen matcher et større/mindre forventet.
+
+```{r}
+library(stringr)
+library(tidyverse)
+library(tidyr)
+```
+
+
+```{r}
+
+genus <- fasta.table$Header
+
+genus.table <- c(genus)
+b <- list(strsplit(genus.table, ";"))
+
+df <- data.frame(genus = (fasta.table$Header)) 
+
+
+
+library(splitstackshape)
+
+genus.table <- cSplit(data.frame(genus), 'genus', ";")
+
+genus.table[,`:=`(genus_1 = NULL, genus_3= NULL, 
+                       genus_4= NULL, genus_5= NULL,genus_6= NULL, genus_7= NULL)] #genusfinal.table Printer oppdaterte genusfinal.table
+
+
+
+RNA <- c(fasta.table$Sequence)
+riktig <- gsub("U", "T", RNA)
+
+# Loop through each row of 'dt' to replace Synonyms with word using sapply
+
+
+
+
+sekvenser.table <- riktig
+
+phylum.table.ext <- cbind(genus.table, sekvenser.table)   #legger sammen sekvenser og genus tabellen sammen       
+
+```
+
+
+
+Her har jeg laget en tabelloversikt over alle phylum og sekvensene.
+
+```{r}
+phylum.table.ext %>% slice(1:10) %>% 
+  separate(sekvenser.table, into = c("Sekvens", NA), sep = 10) 
+```
+
+
+
+
+
+
+
+
+________________________________________________________________________________________________________
+
+
+```{r}
+phyl_res_1 = phylum.table.ext %>%
+  filter(str_detect(phylum.table.ext$sekvenser.table, "TCCTACGGGAGGCAGCAG"))
+```
+
+```{r include=FALSE}
+table(phyl_res_1)
+```
+
+________________________________________________________________________________________________________
+
+
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+
+
+ggplot(data = phyl_res_1,
+       mapping = aes(x = genus_2)) + 
+  geom_bar() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+   labs(y= "Antall sekvenser", x = "Phylum") 
+
+
+
+```
+
+________________________________________________________________________________________________________
+
+
+Når jeg prøver å matche med primer Modified_Mangala_F1_primer, får 900 matcher ser vi at det er Phylum Firmicutes og Proteobacteria som dominerer.
+
+
+
+
+
+
+________________________________________________________________________________________________________
+
+```{r}
+#primer_2 3´-5´ og KOMPLEMENTÆR!!!!
+phyl_res_2 = phylum.table.ext %>%
+  filter(str_detect(phylum.table.ext$sekvenser.table, "AAGTCGTAACAAGGTAACCG"))
+```
+
+________________________________________________________________________________________________________
+
+
+finner oversikt over hvor hvilke phylum som ble matchet, og det var totalt  40  som var matchet av 1000 sekvenser. Utifra grafen nede ser vi at Proteobakterier dominerer.
+
+
+
+
+________________________________________________________________________________________________________
+
+```{r}
+ggplot(data = phyl_res_2,
+       mapping = aes(x = genus_2)) + 
+  geom_bar() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+   labs(y= "Antall sekvenser", x = "Phylum")  
+
+```
+
+
+_____________________________________________________________________________________________________
+
+
+
+
+Når jeg prøver å matche med primer Modified 16S UR primer , får 40 matcher ser vi at det er Phylum Proteobacteria som dominerer.
+
+
+
+
+
+
+
+
+
+
+
+
+________________________________________________________________________________________________________
+```{r}
+#begge to
+phyl_res_3 = phylum.table.ext %>%
+  filter(str_detect(phylum.table.ext$sekvenser.table, "TCCTACGGGAGGCAGCAG")&(str_detect(final.table.ext$sekvenser.table, "AAGTCGTAACAAGGTAACCG")))
+
+
+```
+
+________________________________________________________________________________________________________
+
+
+
+
+Finner oversikt over hvor hvilke phylum som ble matchet, og det var totalt  39 som var matchet.
+
+```{r include=FALSE}
+table(phyl_res_3)
+```
+
+
+
+
+
+________________________________________________________________________________________________________
+```{r}
+ggplot(data = phyl_res_3,
+       mapping = aes(x = genus_2)) + 
+  geom_bar() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+   labs(y= "Antall sekvenser", x = "Phylum")  
+
+```
+
+
+
+_____________________________________________________________________________________________________
+
+
+
+
+Fra table(phyl_res_1) får jeg oversikt over hvor mange forskjellige phylum ble matchet.
+
+```{r}
+
+df <- data.frame(
+  Acidobacteriota = c(12,12),
+  Actinobacteriota = c(135,138),
+  Bacteroidota = c(90,102),
+  Bdellovibrionota = c(1,1),
+  Campilobacterota = c(8,8),
+  Chloroflexi = c(5,10),
+  Cloacimonadota = c(1,1),
+  Cyanobacteria  = c(26,28),
+  Dadabacteria = c(1,1),
+  Deinococcota = c(1,1),
+  Dependentiae = c(1,1),
+  Desulfobacterota = c(13,13),
+  Firmicutes = c(302,316),
+  Fusobacteriota = c(1,1),
+  Gemmatimonadota  = c(1,1),
+  SAR406_clade = c(1,1),
+  Methylomirabilota = c(1,1),
+  Myxococcota  = c(3,3),
+  NB1_j = c(1,1),
+  Nitrospinota = c(1,1),
+  Nitrospirota = c(3,3),
+  Patescibacteria = c(2,4),
+  Proteobacteria = c(282,288),
+  SAR324_clade_Marine_group_B = c(1,1),
+  Spirochaetota = c(5,5),
+  Sva0485 = c(1,1),
+  Synergistota = c(1,2),
+  row.names = c('match',' ikke Match '))
+
+df
+
+fisher.test(df, simulate.p.value = TRUE)
+
+```
+
+
+
+Nullhypotesen er  sannsynligheten for suksess i denne eksempelen så handler det om  Match og ikke match. Men problemet er at denne felles sannsynligheten er ukjent selv om nullhypotesen er sann og vi trenger for å beregne p-verdien. Min oppgave er ikke  en typisk statistikk oppgave , men det nærmeste jeg kan brukes av alle statistikk metodene, ønsker jeg å forholde meg til Fisher eksakt test,  ved å late som om det totale match er bestemt før.
+
+Jeg får en p-verdi = 1 som betyr at jeg ikke klarte å avvise H0, dvs , det er ingen postivt sammenheng mellom variablene dine. Fisher eksakt test kan brukes for  små utvalgstørrelser og prøvestørrelsern som er relativt stor noen områder.
+
+
+
+
+______________________________________________________________________________________________________
+
+
+```{r}
+#table(phyl_res_2$genus_2)
+```
+
+
+
+
+
+```{r}
+ef <- data.frame(
+  Actinobacteriota = c(1,138),
+  Bacteroidota = c(2,102),
+  Campilobacterota = c(4,8),
+  Chloroflexi = c(5,10),
+  Crenarchaeota = c(1,11),
+  Cyanobacteria  = c(1,28),
+  Firmicutes = c(1,316),
+  Patescibacteria = c(2,4),
+  Proteobacteria = c(30,288),
+  row.names = c('match',' ikke Match '))
+
+ef
+
+fisher.test(ef, simulate.p.value = TRUE)
+```
+
+
+Jeg får en p-verdi = 0.0004998 som betyr at jeg ikke klarte å avvise H0, dvs , det er ingen postivt sammenheng mellom variablene dine. Fisher eksakt test anbefales for små utvalgstørrelser og prøvestørrelsern som er relativt stor noen områder.
+
+
+
+```{r}
+#table(phyl_res_3$genus_2)
+```
+
+
+
+```{r}
+ff <- data.frame(
+  Actinobacteriota = c(1,138),
+  Bacteroidota = c(2,102),
+  Campilobacterota = c(4,8),
+  Cyanobacteria  = c(1,28),
+  Firmicutes = c(1,316),
+  Proteobacteria = c(30,288),
+  row.names = c('match',' ikke Match '))
+
+ff
+
+fisher.test(df, simulate.p.value = TRUE)
+```
+
+
+
+________________________________________________________________________________________________________
+
+
+
+
+
+## Konklusjon
+
+Jeg har funnet ut at primerne "Modified Mangala- F1 primer" og "Modified 16s UR primer" matcher med de sekvensene. Begge primere ble angitt i 5'-3' retning, "Modified 16s UR primer" ble revert komplementert.I denne oppgaven fikk jeg bare brukt et utplukk på 10000 sekvenser .fasta fil  fra den store SILVA samlingen. I følge mine analyser ble flertallet ble annotert til phylum Actinobacteria, Firmicutes og Proteobacteria.
+
+Proteobakterier er en gram negativ bakterie og Firmicutes er en undergruppe av gram positive bakterier. Det som er veldig interessant er hud microbiota er dominert av gram positive bakterier. Utifra det jeg har analysert ser jeg fylogenetiske forhold og taksonomi av proteobakterier er fra frisk mennekselig humikrobiota ved analyse av 16s rRNA- gensekvenser.
+
+Fra resultater phyl_res_1 , phyl_res 2 og  Phyl_res_3 får jeg en p-verdi = 1 og klarte ikke å å avvise H0, dvs , det er ingen postivt sammenheng mellom variablene mine.
+
+
+
+```{r Prøver å kjøre 2 millioner sekvenser}
+
+#library(microseq)
+
+#Silva_2mill <- readFasta("SILVA_138_SSURef_tax_silva.fasta")
+
+#Silva.idx <- which(str_detect(Silva_2mill, ">")) #detektere linjer som inne holder ">"
+
+
+#Silva_2mill.table <- tibble(Header = str_remove(Silva_2mill[Silva.idx], "^>"),
+                      #Sequence = rep("", length(Silva.idx)))
+
+#header.idx <- c(Silva.idx, length(Silva_2mill)+1)
+#for(i in 1:(length(Silva.idx)-1))
+ #chunk <- Silva_2mill[(Silva.idx[i]+1):(Silva.idx[i+1]-1)]
+  #Silva_2mill.table$Sequence[i] <- str_c(chunk, collapse = "")  
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
